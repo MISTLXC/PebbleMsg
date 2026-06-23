@@ -2,10 +2,6 @@
 
 **基于邮件的桌面消息弹窗提醒工具。** 基于 Pebble 重构，使用 Rust + React 构建。接入任意邮箱，新邮件到达时桌面弹窗实时提醒，关键消息绝不会错过。
 
-<p align="center">
-  <img src="site/screenshots/main.png" alt="PebbleMsg 截图" width="800">
-</p>
-
 ## 与 Pebble 的区别
 
 PebbleMsg 在 Pebble 0.0.8 基础上做了以下增强：
@@ -92,4 +88,4 @@ pnpm build:linux    # Linux
 
 ## 许可证
 
-[AGPL-3.0](LICENSE) — lvxiaochao @ Fiberhome
+[AGPL-3.0](LICENSE)
