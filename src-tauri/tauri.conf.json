@@ -1,0 +1,55 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "PebbleMsg",
+  "version": "0.0.8",
+  "identifier": "com.qingj01.pebble",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeDevCommand": "pnpm dev:frontend",
+    "beforeBuildCommand": "pnpm build:frontend"
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico",
+      "icons/icon.png"
+    ]
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["mailto"]
+      }
+    }
+  },
+  "app": {
+    "security": {
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: asset: http://asset.localhost; connect-src 'self' https://api.github.com ipc: http://ipc.localhost; font-src 'self' data:; frame-src 'none'; object-src 'none';",
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$APPDATA/backgrounds/**/*"]
+      }
+    },
+    "windows": [
+      {
+        "label": "main",
+        "title": "PebbleMsg",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 600,
+        "decorations": false,
+        "resizable": true,
+        "center": true,
+        "visible": false,
+        "backgroundColor": "#1a1a1a"
+      }
+    ]
+  }
+}
