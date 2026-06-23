@@ -748,23 +748,31 @@ fn build_sync_task(
                 let config_for_runtime_status = config.clone();
                 tokio::spawn(async move {
                     while let Some(status) = runtime_status_rx.recv().await {
-                        let supports_idle = matches!(status, SyncRuntimeStatus::ImapIdleAvailable);
+                        let (mode, message) = match status {
+                            SyncRuntimeStatus::ImapIdleAvailable => (
+                                RealtimeMode::Realtime,
+                                None,
+                            ),
+                            SyncRuntimeStatus::ImapPollingFallback => (
+                                RealtimeMode::Polling,
+                                Some(polling_status_message(&config_for_runtime_status)),
+                            ),
+                            // Recovery after transient error — fall-back to
+                            // polling until IDLE support is re-confirmed.
+                            SyncRuntimeStatus::ConnectionRestored => (
+                                RealtimeMode::Polling,
+                                Some(polling_status_message(&config_for_runtime_status)),
+                            ),
+                        };
                         emit_realtime_status(
                             &app_for_runtime_status,
                             realtime_status_payload(
                                 &account_id_for_runtime_status,
                                 &ProviderType::Imap,
-                                imap_capability_realtime_mode(
-                                    &config_for_runtime_status,
-                                    supports_idle,
-                                ),
+                                mode,
                                 Some(now_timestamp_secs()),
                                 None,
-                                if supports_idle {
-                                    None
-                                } else {
-                                    Some(polling_status_message(&config_for_runtime_status))
-                                },
+                                message,
                             ),
                         );
                     }

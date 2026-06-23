@@ -278,8 +278,14 @@ impl AsyncWrite for InnerStream {
 /// of whether the underlying transport is TLS or plain TCP.
 type ImapSession = async_imap::Session<PrefixedStream<InnerStream>>;
 
-const IMAP_CONNECT_TIMEOUT_SECS: u64 = 15;
-const IMAP_COMMAND_TIMEOUT_SECS: u64 = 45;
+/// Timeout for establishing a TCP connection (DNS + TCP handshake).
+/// Raised to 30s to tolerate extreme networks (high-latency links,
+/// saturated LANs, firewall-induced delays) and slow DNS resolution.
+const IMAP_CONNECT_TIMEOUT_SECS: u64 = 30;
+/// Timeout for individual IMAP commands (SELECT, FETCH, SEARCH, etc.).
+/// Raised to 60s to tolerate slow servers and large mailbox operations
+/// common in long-running LAN deployments.
+const IMAP_COMMAND_TIMEOUT_SECS: u64 = 60;
 
 fn imap_timeout_error(operation: &str, seconds: u64) -> PebbleError {
     PebbleError::Network(format!("{operation} timed out after {seconds}s"))

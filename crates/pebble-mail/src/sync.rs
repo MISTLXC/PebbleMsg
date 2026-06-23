@@ -490,6 +490,10 @@ pub struct StoredMessage {
 pub enum SyncRuntimeStatus {
     ImapIdleAvailable,
     ImapPollingFallback,
+    /// Emitted when the sync worker recovers from a transient error (backoff
+    /// cleared after a successful poll), so the realtime status layer can
+    /// reset to a healthy display mode.
+    ConnectionRestored,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1895,9 +1899,29 @@ impl SyncWorker {
                 _ = tokio::time::sleep(next_poll_delay), if !idle_watcher_active => {
                     if backoff.is_circuit_open() {
                         warn!(
-                            "Circuit open for account {} ({} consecutive failures); attempting half-open poll after scheduled delay",
+                            "Circuit open for account {} ({} consecutive failures); forcing reconnect before half-open poll",
                             self.base.account_id, backoff.failure_count()
                         );
+                        // Under firewalls, long server downtime, or extreme
+                        // networks the TCP socket is dead.  Reconnect now
+                        // instead of wasting a poll cycle on a dead session.
+                        let _ = self.provider.disconnect().await;
+                        if let Err(reconn_err) = self.provider.connect().await {
+                            warn!(
+                                "Half-open reconnect failed for account {}: {}",
+                                self.base.account_id, reconn_err
+                            );
+                            self.base.emit_error(
+                                "connection",
+                                &format!("Half-open reconnect failed: {}", reconn_err),
+                            );
+                            backoff.record_failure();
+                            continue;
+                        }
+                        // Connection is fresh — reset baseline so the next
+                        // poll does a full catch-up instead of incremental.
+                        polling_baseline_trusted = false;
+                        last_exists = None;
                     }
 
                     if !polling_baseline_trusted {
@@ -1911,6 +1935,9 @@ impl SyncWorker {
                             Err(e) => {
                                 warn!("Catch-up poll before IMAP baseline refresh failed for account {}: {}", self.base.account_id, e);
                                 self.base.emit_error("poll", &format!("Catch-up poll before IMAP baseline refresh failed: {}", e));
+                                if matches!(e, PebbleError::Network(..)) {
+                                    let _ = self.provider.disconnect().await;
+                                }
                                 backoff.record_failure();
                             }
                         }
@@ -1931,6 +1958,9 @@ impl SyncWorker {
                                 if let Err(e) = self.poll_new_messages().await {
                                     warn!("Poll error for account {}: {}", self.base.account_id, e);
                                     self.base.emit_error("poll", &format!("Poll error: {}", e));
+                                    if matches!(e, PebbleError::Network(..)) {
+                                        let _ = self.provider.disconnect().await;
+                                    }
                                     backoff.record_failure();
                                 } else {
                                     backoff.record_success();
@@ -1986,6 +2016,9 @@ impl SyncWorker {
                             Err(e) => {
                                 warn!("IDLE check failed for account {}: {}", self.base.account_id, e);
                                 self.base.emit_error("idle", &format!("IDLE check failed: {}", e));
+                                if matches!(e, PebbleError::Network(..)) {
+                                    let _ = self.provider.disconnect().await;
+                                }
                                 backoff.record_failure();
                             }
                         }
@@ -2006,6 +2039,9 @@ impl SyncWorker {
                             if let Err(e) = self.poll_new_messages().await {
                                 warn!("Provider push poll error for account {}: {}", self.base.account_id, e);
                                 self.base.emit_error("poll", &format!("Provider push poll error: {}", e));
+                                if matches!(e, PebbleError::Network(..)) {
+                                    let _ = self.provider.disconnect().await;
+                                }
                                 backoff.record_failure();
                             } else {
                                 backoff.record_success();
@@ -2027,6 +2063,9 @@ impl SyncWorker {
                                 Err(e) => {
                                     warn!("Catch-up poll after IMAP IDLE watcher exit failed for account {}: {}", self.base.account_id, e);
                                     self.base.emit_error("poll", &format!("Catch-up poll after IMAP IDLE watcher exit failed: {}", e));
+                                    if matches!(e, PebbleError::Network(..)) {
+                                        let _ = self.provider.disconnect().await;
+                                    }
                                     backoff.record_failure();
                                     false
                                 }
@@ -2076,14 +2115,45 @@ impl SyncWorker {
                                 }
                                 self.poll_all_new_messages("manual").await
                             } else {
+                                // Non-manual trigger (WindowFocus, NetworkOnline,
+                                // ProviderPush, etc.): if we have recent failures,
+                                // reconnect before polling so a dead session is not
+                                // reused. Critical for fast recovery after the server
+                                // comes back from a long outage.
+                                if backoff.failure_count() > 0 {
+                                    let _ = self.provider.disconnect().await;
+                                    if let Err(reconn_err) = self.provider.connect().await {
+                                        warn!(
+                                            "Trigger reconnect failed for account {}: {}",
+                                            self.base.account_id, reconn_err
+                                        );
+                                        self.base.emit_error(
+                                            "connection",
+                                            &format!("Trigger reconnect failed: {}", reconn_err),
+                                        );
+                                        backoff.record_failure();
+                                        continue;
+                                    }
+                                    backoff.record_success();
+                                    polling_baseline_trusted = false;
+                                }
                                 self.poll_new_messages().await
                             };
                             if let Err(e) = poll_result {
                                 warn!("Triggered poll error for account {}: {}", self.base.account_id, e);
                                 self.base.emit_error("poll", &format!("Triggered poll error: {}", e));
+                                if matches!(e, PebbleError::Network(..)) {
+                                    let _ = self.provider.disconnect().await;
+                                }
                                 backoff.record_failure();
                             } else {
+                                let was_failing = backoff.failure_count() > 0;
                                 backoff.record_success();
+                                if was_failing {
+                                    // Recovery: tell the status layer we are healthy again.
+                                    self.base
+                                        .emit_runtime_status(SyncRuntimeStatus::ConnectionRestored);
+                                }
                                 self.maybe_sync_folders(&mut folder_sync_counter).await;
                                 if !idle_watcher_active {
                                     polling_baseline_trusted =
@@ -2104,6 +2174,9 @@ impl SyncWorker {
                         warn!("Reconcile poll error for account {}: {}", self.base.account_id, e);
                         self.base.emit_error("reconcile", &format!("Reconcile poll error: {}", e));
                         self.base.emit_sync_error("reconcile", &e.to_string());
+                        if matches!(e, PebbleError::Network(..)) {
+                            let _ = self.provider.disconnect().await;
+                        }
                         backoff.record_failure();
                         continue;
                     } else {
