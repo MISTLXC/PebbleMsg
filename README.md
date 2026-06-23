@@ -38,54 +38,6 @@ PebbleMsg 在 Pebble 0.0.8 基础上做了以下增强：
 | 搜索引擎 | Tantivy |
 | 数据库 | SQLite |
 
-## 开发指南
-
-### 环境要求
-
-- [Rust](https://rustup.rs) 最新稳定版
-- [Node.js](https://nodejs.org) 18+
-- [pnpm](https://pnpm.io) 9+
-- [Tauri 系统依赖](https://tauri.app/start/prerequisites/)
-
-### 快速开始
-
-```bash
-git clone https://github.com/QingJ01/Pebble.git
-cd Pebble
-
-cp .env.example .env
-pnpm install
-pnpm dev
-```
-
-### 构建
-
-```bash
-pnpm build          # 当前平台
-pnpm build:windows  # Windows
-pnpm build:macos    # macOS
-pnpm build:linux    # Linux
-```
-
-## 项目结构
-
-```
-├── crates/            # Rust workspace
-│   ├── pebble-core/   # 共享类型与接口
-│   ├── pebble-crypto/ # AES-256 加密与密钥管理
-│   ├── pebble-mail/   # IMAP/SMTP/Gmail/Outlook 邮件协议
-│   ├── pebble-oauth/  # OAuth 2.0 + PKCE 认证
-│   ├── pebble-privacy/# HTML 净化与追踪器拦截
-│   ├── pebble-rules/  # 规则引擎
-│   ├── pebble-search/ # 全文搜索
-│   ├── pebble-store/  # 数据持久层
-│   └── pebble-translate/ # 翻译
-├── src/               # React 前端
-├── src-tauri/         # Tauri 后端 & IPC
-├── site/              # 官网
-└── scripts/           # 构建脚本
-```
-
 ## 许可证
 
 [AGPL-3.0](LICENSE)
